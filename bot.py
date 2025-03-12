@@ -1,6 +1,6 @@
 import logging
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from config import BOT_TOKEN, WEBHOOK_URL
 
 # Telegram API URL
@@ -15,7 +15,7 @@ def home():
     return {"status": "Aviator Bot is Running!"}
 
 @app.post("/webhook")
-async def webhook(request: Request):
+async def webhook(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
 
     if "message" in data:
@@ -23,13 +23,19 @@ async def webhook(request: Request):
         text = data["message"].get("text", "").lower()
 
         if text == "/start":
-            await send_message(chat_id, "Welcome to the Aviator Predictor Bot! Use /predict to get predictions.")
+            background_tasks.add_task(send_message, chat_id, "Welcome to the Aviator Predictor Bot! Use /predict to get predictions.")
         elif text == "/predict":
             prediction = "Next round: High chance of 2x+ multiplier!"
-            await send_message(chat_id, prediction)
+            background_tasks.add_task(send_message, chat_id, prediction)
 
     return {"status": "ok"}
 
 async def send_message(chat_id, text):
     async with httpx.AsyncClient() as client:
-        await client.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": text})
+        try:
+            response = await client.post(f"{TELEGRAM_API}/sendMessage", json={"chat_id": chat_id, "text": text})
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logging.error(f"Error sending message: {e.response.text}")
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
